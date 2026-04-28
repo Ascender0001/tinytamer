@@ -26,7 +26,7 @@ export async function showLoginScreen(): Promise<{ onlineEnabled: boolean; user:
         <div class="login-actions">
           <button id="login-button" ${configured ? '' : 'disabled'}>Send Magic Link</button>
           <button id="logout-button" ${user ? '' : 'disabled'}>Logout</button>
-          <button id="check-status-button" ${user ? '' : 'disabled'}>Check Status</button>
+          <button id="check-status-button">Check Status</button>
           <button id="offline-button">Play Local</button>
           <button id="online-button" ${approved ? '' : 'disabled'}>Enter Online World</button>
         </div>
@@ -51,8 +51,14 @@ export async function showLoginScreen(): Promise<{ onlineEnabled: boolean; user:
       const onlineButton = overlay.querySelector('#online-button');
       note.textContent = 'Checking approval status...';
       const freshUser = await getCurrentUser();
-      profile = freshUser ? await getOrCreateProfile() : null;
-      approved = freshUser ? (profile?.approved || await isUserApproved(freshUser.id)) : false;
+      if (!freshUser) {
+        status.textContent = 'Not signed in. Use the magic link first, or play locally.';
+        onlineButton.disabled = true;
+        note.textContent = 'No active login session found.';
+        return;
+      }
+      profile = await getOrCreateProfile();
+      approved = Boolean(profile?.approved || await isUserApproved(freshUser.id));
       status.textContent = approved ? 'Approved for multiplayer' : freshUser ? 'Your account is waiting for approval.' : 'Not signed in';
       onlineButton.disabled = !approved;
       note.textContent = approved ? 'Approved! You can enter the online world now.' : 'Still waiting for approval. You can keep playing locally.';
