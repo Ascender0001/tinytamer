@@ -6,8 +6,8 @@ import { getStorageMode } from '../storage/storageService';
 export async function showLoginScreen(): Promise<{ onlineEnabled: boolean; user: any; profile: any }> {
   const configured = isSupabaseConfigured();
   const user = await getCurrentUser();
-  const profile = user ? await getOrCreateProfile() : null;
-  const approved = user ? (profile?.approved || await isUserApproved(user.id)) : false;
+  let profile = user ? await getOrCreateProfile() : null;
+  let approved = user ? (profile?.approved || await isUserApproved(user.id)) : false;
 
   return new Promise((resolve) => {
     const overlay = document.createElement('section');
@@ -20,12 +20,13 @@ export async function showLoginScreen(): Promise<{ onlineEnabled: boolean; user:
           <span>Storage: ${configured ? 'Supabase ready' : 'Local offline'}</span>
           <span>Mode: ${getStorageMode()}</span>
           <span>${user ? `Signed in as ${user.email}` : 'Not signed in'}</span>
-          <span>${approved ? 'Approved for multiplayer' : user ? 'Your account is waiting for approval.' : 'Local play is available.'}</span>
+          <span id="approval-status">${approved ? 'Approved for multiplayer' : user ? 'Your account is waiting for approval.' : 'Local play is available.'}</span>
         </div>
         <input id="login-email" type="email" placeholder="email@example.com" ${configured ? '' : 'disabled'} />
         <div class="login-actions">
           <button id="login-button" ${configured ? '' : 'disabled'}>Send Magic Link</button>
           <button id="logout-button" ${user ? '' : 'disabled'}>Logout</button>
+          <button id="check-status-button" ${user ? '' : 'disabled'}>Check Status</button>
           <button id="offline-button">Play Local</button>
           <button id="online-button" ${approved ? '' : 'disabled'}>Enter Online World</button>
         </div>
@@ -43,6 +44,18 @@ export async function showLoginScreen(): Promise<{ onlineEnabled: boolean; user:
     overlay.querySelector('#logout-button').addEventListener('click', async () => {
       await signOut();
       window.location.reload();
+    });
+    overlay.querySelector('#check-status-button').addEventListener('click', async () => {
+      const note = overlay.querySelector('.login-note');
+      const status = overlay.querySelector('#approval-status');
+      const onlineButton = overlay.querySelector('#online-button');
+      note.textContent = 'Checking approval status...';
+      const freshUser = await getCurrentUser();
+      profile = freshUser ? await getOrCreateProfile() : null;
+      approved = freshUser ? (profile?.approved || await isUserApproved(freshUser.id)) : false;
+      status.textContent = approved ? 'Approved for multiplayer' : freshUser ? 'Your account is waiting for approval.' : 'Not signed in';
+      onlineButton.disabled = !approved;
+      note.textContent = approved ? 'Approved! You can enter the online world now.' : 'Still waiting for approval. You can keep playing locally.';
     });
     overlay.querySelector('#offline-button').addEventListener('click', () => {
       overlay.remove();
