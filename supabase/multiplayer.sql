@@ -18,6 +18,12 @@ using (
   )
 );
 
+-- Allow signed-in users to read their own approval status even before approval.
+drop policy if exists "Users can read their own approval status" on public.profiles;
+create policy "Users can read their own approval status"
+on public.profiles for select
+using (auth.uid() = id);
+
 -- Users can update display fields, but not approval. Approval remains manual/admin.
 -- Manual approval example:
 -- update public.profiles set approved = true where id = 'USER_ID';

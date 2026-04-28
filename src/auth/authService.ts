@@ -32,7 +32,11 @@ export async function signOut(): Promise<void> {
 export async function getOrCreateProfile(): Promise<AuthProfile | null> {
   const user = await getCurrentUser();
   if (!user || !supabase) return null;
-  const { data } = await supabase.from('profiles').select('id, display_name, approved, player_color').eq('id', user.id).maybeSingle();
+  const { data, error: readError } = await supabase.from('profiles').select('id, display_name, approved, player_color').eq('id', user.id).maybeSingle();
+  if (readError) {
+    console.warn('Could not read profile. Check profiles RLS policies.', readError);
+    return null;
+  }
   if (data) return data as AuthProfile;
   const displayName = user.email?.split('@')[0] ?? 'Tamer';
   const { data: inserted, error } = await supabase.from('profiles').insert({ id: user.id, display_name: displayName, approved: false }).select('id, display_name, approved, player_color').single();
