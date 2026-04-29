@@ -62,7 +62,12 @@ export async function signUpWithEmailPassword(email: string, password: string, d
   });
   if (error) throw error;
   const user = data.user;
-  const profile = user ? await getOrCreateProfile(user, sanitizedDisplayName ?? undefined) : null;
+
+  if (!user || !data.session) {
+    return { user, profile: null };
+  }
+
+  const profile = await getOrCreateProfile(user, sanitizedDisplayName ?? undefined);
   return { user, profile };
 }
 
