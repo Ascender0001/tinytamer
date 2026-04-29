@@ -126,7 +126,7 @@ export async function showLoginScreen(): Promise<AuthGateContext> {
         } else {
           if (password !== confirmPassword) throw new Error('Confirm password must match.');
           const { user, profile } = await signUpWithEmailPassword(email, password, displayName);
-          state.user = user; state.profile = profile; state.message = user ? 'Account created. Waiting for approval.' : 'Please confirm your email, then wait for approval.'; state.tone = 'success';
+          state.user = user; state.profile = profile; state.message = profile ? 'Account created. Waiting for approval.' : 'Check your email to confirm your account, then log in.'; state.tone = 'success';
         }
         state.loading = false;
         if (state.user && state.profile && canPlayOnline(state.user, state.profile)) { overlay.remove(); resolve({ user: state.user, profile: state.profile }); return; }

@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 import type { Session, User } from '@supabase/supabase-js';
+import { createNewPlayerData } from '../storage/migrations';
 
 export interface AuthProfile {
   id: string;
@@ -16,6 +17,13 @@ export interface AuthGateContext {
 
 const PROFILE_COLUMNS = 'id, email, display_name, approved, player_color';
 
+interface SupabaseErrorLike {
+  message?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+}
+
 function requireSupabase() {
   if (!isSupabaseConfigured() || !supabase) throw new Error('Supabase is required to play Tiny Tamer.');
   return supabase;
@@ -25,6 +33,24 @@ function cleanDisplayName(displayName?: string): string | null {
   const trimmed = displayName?.trim();
   if (!trimmed) return null;
   return trimmed.slice(0, 40);
+}
+
+function formatSupabaseError(error: SupabaseErrorLike): string {
+  return [
+    error.message,
+    error.code ? `code: ${error.code}` : null,
+    error.details ? `details: ${error.details}` : null,
+    error.hint ? `hint: ${error.hint}` : null,
+  ].filter(Boolean).join(' | ');
+}
+
+function logSupabaseError(label: string, error: SupabaseErrorLike): void {
+  console.error(label, {
+    message: error.message,
+    code: error.code,
+    details: error.details,
+    hint: error.hint,
+  });
 }
 
 export function canPlayOnline(user: User | null | undefined, profile: AuthProfile | null | undefined): user is User {
@@ -54,19 +80,30 @@ export async function getCurrentUser(): Promise<User | null> {
 export async function signUpWithEmailPassword(email: string, password: string, displayName?: string): Promise<{ user: User | null; profile: AuthProfile | null }> {
   const client = requireSupabase();
   const sanitizedDisplayName = cleanDisplayName(displayName);
+  console.info('[auth] signup started', { email: email.trim() });
   const { data, error } = await client.auth.signUp({
     email: email.trim(),
     password,
     options: { data: sanitizedDisplayName ? { display_name: sanitizedDisplayName } : undefined },
   });
-  if (error) throw error;
+  if (error) {
+    logSupabaseError('[auth] signup failed', error);
+    throw new Error(formatSupabaseError(error));
+  }
   const user = data.user;
+  console.info('[auth] auth user created', { userId: user?.id ?? null, hasSession: Boolean(data.session) });
 
-  if (!user || !data.session) {
+  if (!user) {
+    throw new Error('Check your email to confirm your account, then log in.');
+  }
+
+  if (!data.session) {
+    console.info('[auth] signup requires email confirmation before profile creation', { userId: user.id });
     return { user, profile: null };
   }
 
   const profile = await getOrCreateProfile(user, sanitizedDisplayName ?? undefined);
+  await ensureStarterPlayerSave(user.id);
   return { user, profile };
 }
 
@@ -76,6 +113,7 @@ export async function signInWithEmailPassword(email: string, password: string): 
   if (error) throw error;
   if (!data.user) throw new Error('Login failed. Check your email and password.');
   const profile = await getOrCreateProfile(data.user);
+  await ensureStarterPlayerSave(data.user.id);
   return { user: data.user, profile };
 }
 
@@ -88,24 +126,44 @@ export async function signOut(): Promise<void> {
 export async function getOrCreateProfile(user?: User | null, displayName?: string): Promise<AuthProfile | null> {
   const client = requireSupabase();
   const currentUser = user ?? await getCurrentUser();
-  if (!currentUser) return null;
+  if (!currentUser?.id) throw new Error('Cannot create profile without a valid authenticated user id.');
   const { data, error: selectError } = await client.from('profiles').select(PROFILE_COLUMNS).eq('id', currentUser.id).maybeSingle();
   if (selectError) {
-    console.warn('Could not load profile.', selectError);
-    return null;
+    logSupabaseError('[auth] profile select failed', selectError);
+    throw new Error(formatSupabaseError(selectError));
   }
   if (data) return data as AuthProfile;
   const fallbackDisplayName = cleanDisplayName(displayName) ?? currentUser.email?.split('@')[0] ?? 'Tamer';
+  console.info('[auth] profile insert started', { userId: currentUser.id, email: currentUser.email ?? null });
   const { data: inserted, error } = await client
     .from('profiles')
-    .insert({ id: currentUser.id, email: currentUser.email ?? null, display_name: fallbackDisplayName, approved: false })
+    .upsert({ id: currentUser.id, email: currentUser.email ?? null, display_name: fallbackDisplayName, approved: false }, { onConflict: 'id' })
     .select(PROFILE_COLUMNS)
     .single();
   if (error) {
-    console.warn('Could not create profile.', error);
-    return null;
+    logSupabaseError('[auth] profile insert failed', error);
+    throw new Error(formatSupabaseError(error));
   }
+  console.info('[auth] profile insert success', { userId: currentUser.id });
   return inserted as AuthProfile;
+}
+
+export async function ensureStarterPlayerSave(userId: string): Promise<void> {
+  const client = requireSupabase();
+  const starterSave = createNewPlayerData();
+  starterSave.playerId = userId;
+  console.info('[auth] player save insert started', { userId });
+  const { error } = await client.from('player_saves').upsert({
+    user_id: userId,
+    save_version: starterSave.saveVersion,
+    active_creature_id: starterSave.activeCreatureId,
+    save_data: starterSave,
+  }, { onConflict: 'user_id', ignoreDuplicates: true });
+  if (error) {
+    logSupabaseError('[auth] player save insert failed', error);
+    throw new Error(formatSupabaseError(error));
+  }
+  console.info('[auth] player save insert success', { userId });
 }
 
 export async function getCurrentProfile(): Promise<AuthProfile | null> {

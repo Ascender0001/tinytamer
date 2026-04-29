@@ -41,6 +41,13 @@ create table if not exists public.player_saves (
   unique (user_id)
 );
 
+alter table public.player_saves add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table public.player_saves add column if not exists save_version integer not null default 1;
+alter table public.player_saves add column if not exists active_creature_id text;
+alter table public.player_saves add column if not exists save_data jsonb not null default '{}'::jsonb;
+alter table public.player_saves add column if not exists created_at timestamptz not null default now();
+alter table public.player_saves add column if not exists updated_at timestamptz not null default now();
+
 create index if not exists idx_player_saves_user_id on public.player_saves(user_id);
 create index if not exists idx_profiles_email on public.profiles(email);
 
