@@ -36,7 +36,7 @@ function renderWaiting(user: User, message: string): string {
       <div class="login-status"><span>Signed in as ${escapeHtml(user.email ?? 'unknown user')}</span><span>Access: Waiting for approval</span></div>
       <p class="auth-message info">${escapeHtml(message)}</p>
       <div class="login-actions single-action"><button id="logout-button">Logout</button></div>
-      <p class="login-note">A project owner must approve your profile before online mode is available. Local mode remains playable from the main screen.</p>
+      <p class="login-note">A project owner must approve your profile before gameplay is available.</p>
     </div>
   `;
 }
@@ -46,8 +46,7 @@ function renderAuthForm(state: AuthScreenState): string {
   const disabled = state.loading ? 'disabled' : '';
   return `
     <div class="login-card auth-shell">
-      <div class="auth-brand"><span class="auth-badge">Retro Online</span><h1>Tiny Tamer</h1><p>Play locally now, or login for approved online play.</p></div>
-      <button id="play-local-button" class="local-play-button" type="button" ${disabled}>Play Locally</button>
+      <div class="auth-brand"><span class="auth-badge">Online Save</span><h1>Tiny Tamer</h1><p>Login or register with email and password to enter the world.</p></div>
       <div class="auth-tabs" role="tablist" aria-label="Authentication mode">
         <button id="auth-tab-login" class="auth-tab ${isLogin ? 'active' : ''}" ${disabled} type="button">Login</button>
         <button id="auth-tab-register" class="auth-tab ${!isLogin ? 'active' : ''}" ${disabled} type="button">Register</button>
@@ -60,7 +59,7 @@ function renderAuthForm(state: AuthScreenState): string {
         <p class="auth-message ${state.tone}">${escapeHtml(state.loading ? 'Working...' : state.message)}</p>
         <button id="auth-submit" class="auth-submit" type="submit" ${disabled}>${state.loading ? 'Please wait...' : isLogin ? 'Login' : 'Register'}</button>
       </form>
-      <p class="login-note">Local mode uses this browser only. Online mode requires Supabase login and approval.</p>
+      <p class="login-note">Gameplay requires Supabase login, a profile, and owner approval.</p>
     </div>
   `;
 }
@@ -73,13 +72,13 @@ export async function showLoginScreen(): Promise<AuthGateContext> {
     document.body.appendChild(overlay);
     const state: AuthScreenState = {
       mode: 'login', loading: false,
-      message: configured ? 'Login with an approved account, register for approval, or play locally.' : 'Supabase is not configured. Local play is available.',
+      message: configured ? 'Login with an approved account or register for approval.' : 'Supabase is required to play Tiny Tamer.',
       tone: 'info', user: null, profile: null,
     };
 
     async function logoutAndRefresh(): Promise<void> {
       await signOut();
-      state.user = null; state.profile = null; state.loading = false; state.message = 'Logged out. Login, register, or play locally.'; state.tone = 'info';
+      state.user = null; state.profile = null; state.loading = false; state.message = 'Logged out. Login or register to play.'; state.tone = 'info';
       render();
     }
 
@@ -89,26 +88,30 @@ export async function showLoginScreen(): Promise<AuthGateContext> {
       const user = await getCurrentUser();
       const profile = user ? await getOrCreateProfile(user) : null;
       state.user = user; state.profile = profile;
-      if (user && profile && canPlayOnline(user, profile)) { overlay.remove(); resolve({ mode: 'online', user, profile }); return; }
+      if (user && profile && canPlayOnline(user, profile)) { overlay.remove(); resolve({ user, profile }); return; }
       if (user && profile?.approved === false) { state.message = 'Your account is waiting for approval.'; state.tone = 'info'; }
       render();
     }
 
     function render(): void {
+      if (!configured) {
+        overlay.innerHTML = `<div class="login-card auth-shell auth-error-card"><div class="auth-brand"><span class="auth-badge">Database Required</span><h1>Tiny Tamer</h1><p>Supabase is required to play Tiny Tamer.</p></div><p class="auth-message error">Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then restart the app.</p></div>`;
+        return;
+      }
+
       if (state.user && state.profile?.approved === false) {
         overlay.innerHTML = renderWaiting(state.user, state.message);
         overlay.querySelector<HTMLButtonElement>('#logout-button')?.addEventListener('click', () => { void logoutAndRefresh(); });
         return;
       }
       overlay.innerHTML = renderAuthForm(state);
-      overlay.querySelector<HTMLButtonElement>('#play-local-button')?.addEventListener('click', () => { overlay.remove(); resolve({ mode: 'local', user: null, profile: null }); });
-      overlay.querySelector<HTMLButtonElement>('#auth-tab-login')?.addEventListener('click', () => { state.mode = 'login'; state.message = configured ? 'Login with your approved email and password.' : 'Supabase is not configured. Local play is available.'; state.tone = 'info'; render(); });
-      overlay.querySelector<HTMLButtonElement>('#auth-tab-register')?.addEventListener('click', () => { state.mode = 'register'; state.message = configured ? 'Create an account, then wait for owner approval.' : 'Supabase is not configured. Registration is unavailable.'; state.tone = 'info'; render(); });
+      overlay.querySelector<HTMLButtonElement>('#auth-tab-login')?.addEventListener('click', () => { state.mode = 'login'; state.message = 'Login with your approved email and password.'; state.tone = 'info'; render(); });
+      overlay.querySelector<HTMLButtonElement>('#auth-tab-register')?.addEventListener('click', () => { state.mode = 'register'; state.message = 'Create an account, then wait for owner approval.'; state.tone = 'info'; render(); });
       overlay.querySelector<HTMLFormElement>('#auth-form')?.addEventListener('submit', (event) => { event.preventDefault(); void submitAuthForm(); });
     }
 
     async function submitAuthForm(): Promise<void> {
-      if (!configured) { state.message = 'Supabase is not configured. Use Play Locally.'; state.tone = 'error'; render(); return; }
+      if (!configured) { state.message = 'Supabase is required to play Tiny Tamer.'; state.tone = 'error'; render(); return; }
       const email = getInputValue(overlay, '#auth-email');
       const password = overlay.querySelector<HTMLInputElement>('#auth-password')?.value ?? '';
       const displayName = getInputValue(overlay, '#auth-display-name');
@@ -119,14 +122,14 @@ export async function showLoginScreen(): Promise<AuthGateContext> {
       try {
         if (state.mode === 'login') {
           const { user, profile } = await signInWithEmailPassword(email, password);
-          state.user = user; state.profile = profile; state.message = profile?.approved ? 'Approved. Entering online mode...' : 'Your account is waiting for approval.'; state.tone = profile?.approved ? 'success' : 'info';
+          state.user = user; state.profile = profile; state.message = profile?.approved ? 'Approved. Entering the game...' : 'Your account is waiting for approval.'; state.tone = profile?.approved ? 'success' : 'info';
         } else {
           if (password !== confirmPassword) throw new Error('Confirm password must match.');
           const { user, profile } = await signUpWithEmailPassword(email, password, displayName);
           state.user = user; state.profile = profile; state.message = user ? 'Account created. Waiting for approval.' : 'Please confirm your email, then wait for approval.'; state.tone = 'success';
         }
         state.loading = false;
-        if (state.user && state.profile && canPlayOnline(state.user, state.profile)) { overlay.remove(); resolve({ mode: 'online', user: state.user, profile: state.profile }); return; }
+        if (state.user && state.profile && canPlayOnline(state.user, state.profile)) { overlay.remove(); resolve({ user: state.user, profile: state.profile }); return; }
         render();
       } catch (error) {
         state.loading = false; state.message = error instanceof Error ? error.message : 'Authentication failed. Please try again.'; state.tone = 'error'; render();

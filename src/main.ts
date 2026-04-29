@@ -21,9 +21,9 @@ const battleRoot = document.querySelector('#battle-root');
 
 async function bootstrap() {
   const authContext = await showLoginScreen();
-  if (authContext.mode === 'online' && !canPlayOnline(authContext.user, authContext.profile)) return;
+  if (!canPlayOnline(authContext.user, authContext.profile)) return;
 
-  const gameState = await loadPlayerData(authContext.mode, authContext.user?.id);
+  const gameState = await loadPlayerData(authContext.user.id);
   if (!gameState.activeCreatureId) gameState.activeCreatureId = gameState.collection[0]?.id ?? null;
 
   const sceneBundle = createScene(canvas);
@@ -34,7 +34,7 @@ async function bootstrap() {
   const audio = new AudioManager();
   const movementParticles = new MovementParticles(scene);
   const playerLabel = authContext.profile?.display_name ?? authContext.user?.email ?? '';
-  const hud = createHud(hudRoot, gameState, audio, world, { getStorageMode, getSaveStatus, appMode: authContext.mode, playerLabel });
+  const hud = createHud(hudRoot, gameState, audio, world, { getStorageMode, getSaveStatus, appMode: 'online', playerLabel });
   const multiplayer = new MultiplayerService(scene, player, gameState, authContext);
   await multiplayer.join();
 
@@ -75,7 +75,7 @@ async function bootstrap() {
     overworldPaused = true;
     input.keys?.clear?.();
     await multiplayer.leave();
-    if (authContext.mode === 'online') await signOut();
+    await signOut();
     window.location.reload();
   });
 

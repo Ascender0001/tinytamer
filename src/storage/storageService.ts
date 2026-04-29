@@ -1,14 +1,12 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 import { getCurrentUser, isUserApproved } from '../auth/authService';
-import { loadGame, saveGame } from './save';
 import { createNewPlayerData, migrateSaveData } from './migrations';
 import type { TinyTamerSave } from './saveTypes';
 
-export type StorageMode = 'local' | 'supabase' | 'supabase-fallback';
-export type GameSaveMode = 'local' | 'online';
+export type StorageMode = 'supabase' | 'supabase-error';
 
-let storageMode: StorageMode = 'local';
-let saveStatus: 'Idle' | 'Saving' | 'Saved' | 'Error' = 'Idle';
+let storageMode: StorageMode = 'supabase';
+let saveStatus: 'Idle' | 'Saving' | 'Saved' | 'Save Error' = 'Idle';
 
 export function getStorageMode(): StorageMode {
   return storageMode;
@@ -20,29 +18,23 @@ export function getSaveStatus(): string {
 
 export { createNewPlayerData, migrateSaveData };
 
-export async function loadPlayerData(mode: GameSaveMode, playerId?: string): Promise<TinyTamerSave> {
-  if (mode === 'local') {
-    storageMode = 'local';
-    saveStatus = 'Idle';
-    return loadGame();
-  }
-
+export async function loadPlayerData(playerId: string): Promise<TinyTamerSave> {
   if (!isSupabaseConfigured() || !supabase) {
-    storageMode = 'supabase-fallback';
-    throw new Error('Supabase is required for online saves.');
+    storageMode = 'supabase-error';
+    throw new Error('Supabase is required to play Tiny Tamer.');
   }
 
   try {
     const user = await getCurrentUser();
     const effectivePlayerId = playerId ?? user?.id;
     if (!effectivePlayerId) {
-      storageMode = 'supabase-fallback';
+      storageMode = 'supabase-error';
       throw new Error('Authentication is required for online saves.');
     }
 
     const approved = await isUserApproved(effectivePlayerId);
     if (!approved) {
-      storageMode = 'supabase-fallback';
+      storageMode = 'supabase-error';
       throw new Error('Approval is required for online saves.');
     }
 
@@ -52,29 +44,25 @@ export async function loadPlayerData(mode: GameSaveMode, playerId?: string): Pro
     if (!data?.save_data) {
       const fresh = createNewPlayerData();
       fresh.playerId = effectivePlayerId;
+      await savePlayerData(fresh);
       return fresh;
     }
     return migrateSaveData(data.save_data);
   } catch (error) {
-    console.warn('Supabase load failed. Starting fresh online session without loading local saves.', error);
-    storageMode = 'supabase-fallback';
+    console.warn('Supabase load failed. Starting fresh approved session without loading local saves.', error);
+    storageMode = 'supabase-error';
     const fresh = createNewPlayerData();
     if (playerId) fresh.playerId = playerId;
-    saveStatus = 'Error';
+    saveStatus = 'Save Error';
     return fresh;
   }
 }
 
 export async function savePlayerData(data: TinyTamerSave): Promise<void> {
   saveStatus = 'Saving';
-  if (storageMode === 'local') {
-    saveGame(data);
-    saveStatus = 'Saved';
-    return;
-  }
-
-  if (!isSupabaseConfigured() || !supabase || storageMode !== 'supabase') {
-    saveStatus = 'Error';
+  if (!isSupabaseConfigured() || !supabase) {
+    storageMode = 'supabase-error';
+    saveStatus = 'Save Error';
     return;
   }
 
@@ -94,10 +82,11 @@ export async function savePlayerData(data: TinyTamerSave): Promise<void> {
     };
     const { error } = await supabase.from('player_saves').upsert(payload, { onConflict: 'user_id' });
     if (error) throw error;
+    storageMode = 'supabase';
     saveStatus = 'Saved';
   } catch (error) {
     console.warn('Supabase save failed. Online saves were not written.', error);
-    storageMode = 'supabase-fallback';
-    saveStatus = 'Error';
+    storageMode = 'supabase-error';
+    saveStatus = 'Save Error';
   }
 }

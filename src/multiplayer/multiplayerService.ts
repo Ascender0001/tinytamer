@@ -21,7 +21,7 @@ export class MultiplayerService {
   }
 
   async join() {
-    if (this.authContext?.mode !== 'online' || !isSupabaseConfigured() || !supabase || !this.authContext?.user || this.authContext?.profile?.approved !== true) return;
+    if (!isSupabaseConfigured() || !supabase || !this.authContext?.user || this.authContext?.profile?.approved !== true) return;
     this.status = 'Connecting';
     const profile = this.authContext.profile;
     this.channel = supabase.channel('tiny-tamer-world', { config: { presence: { key: this.authContext.user.id } } });

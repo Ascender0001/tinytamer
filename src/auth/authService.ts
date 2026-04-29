@@ -10,15 +10,14 @@ export interface AuthProfile {
 }
 
 export interface AuthGateContext {
-  mode: 'local' | 'online';
-  user: User | null;
-  profile: AuthProfile | null;
+  user: User;
+  profile: AuthProfile;
 }
 
 const PROFILE_COLUMNS = 'id, email, display_name, approved, player_color';
 
 function requireSupabase() {
-  if (!isSupabaseConfigured() || !supabase) throw new Error('Supabase is not configured. You can still play locally.');
+  if (!isSupabaseConfigured() || !supabase) throw new Error('Supabase is required to play Tiny Tamer.');
   return supabase;
 }
 
