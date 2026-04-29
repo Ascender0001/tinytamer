@@ -3,6 +3,7 @@ export function createHud(root, gameState, audioManager, world, storageInfo) {
   let collectionOpen = false;
   let toggleHandler = null;
   let muteHandler = null;
+  let logoutHandler = null;
   let multiplayerStatus = 'Offline';
   let onlineCount = 0;
 
@@ -34,6 +35,9 @@ export function createHud(root, gameState, audioManager, world, storageInfo) {
 
   function render() {
     const active = gameState.collection.find((creature) => creature.id === gameState.activeCreatureId) ?? gameState.collection[0];
+    const appMode = storageInfo?.appMode === 'online' ? 'Online Mode' : 'Local Mode';
+    const playerLabel = storageInfo?.playerLabel ? ` · ${storageInfo.playerLabel}` : '';
+    const exitLabel = storageInfo?.appMode === 'online' ? 'Logout' : 'Back to Menu';
     root.innerHTML = `
       <header class="hud">
         <div>
@@ -42,11 +46,13 @@ export function createHud(root, gameState, audioManager, world, storageInfo) {
         </div>
         <div class="hud-actions">
           <span class="active-pill">${active?.name ?? 'No buddy'} Lv. ${active?.level ?? 1}</span>
+          <span class="caught-pill">${appMode}${playerLabel}</span>
           <span class="caught-pill">${storageInfo?.getStorageMode?.() === 'supabase' ? 'Cloud' : 'Local'} · ${storageInfo?.getSaveStatus?.() ?? 'Idle'}</span>
-          <span class="caught-pill">${multiplayerStatus} · ${onlineCount} online</span>
+          ${storageInfo?.appMode === 'online' ? `<span class="caught-pill">${multiplayerStatus} · ${onlineCount} online</span>` : ''}
           <span class="caught-pill">Caught: ${gameState.collection.length}</span>
           <button id="mute-toggle" class="sound-button">${audioManager?.muted ? '🔇 Muted' : '🎵 Music'}</button>
           <button id="collection-toggle">${collectionOpen ? 'Close' : 'Open'} Collection</button>
+          <button id="logout-toggle" class="logout-button">${exitLabel}</button>
         </div>
       </header>
       <div class="toast" id="toast"></div>
@@ -55,6 +61,7 @@ export function createHud(root, gameState, audioManager, world, storageInfo) {
 
     root.querySelector('#collection-toggle').addEventListener('click', () => toggleHandler?.());
     root.querySelector('#mute-toggle').addEventListener('click', () => muteHandler?.());
+    root.querySelector('#logout-toggle').addEventListener('click', () => logoutHandler?.());
     root.querySelectorAll('[data-active-id]').forEach((button) => {
       button.addEventListener('click', () => {
         gameState.activeCreatureId = button.dataset.activeId;
@@ -76,6 +83,9 @@ export function createHud(root, gameState, audioManager, world, storageInfo) {
     },
     onToggleMute(handler) {
       muteHandler = handler;
+    },
+    onLogout(handler) {
+      logoutHandler = handler;
     },
     flashMessage(message) {
       const toast = root.querySelector('#toast');

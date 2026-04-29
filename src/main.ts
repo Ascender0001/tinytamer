@@ -13,6 +13,7 @@ import { AudioManager } from './audio/audioManager';
 import { MovementParticles } from './effects/movementParticles';
 import { showLoginScreen } from './ui/loginScreen';
 import { MultiplayerService } from './multiplayer/multiplayerService';
+import { canPlayOnline, signOut } from './auth/authService';
 
 const canvas = document.querySelector('#game-canvas');
 const hudRoot = document.querySelector('#hud-root');
@@ -20,7 +21,9 @@ const battleRoot = document.querySelector('#battle-root');
 
 async function bootstrap() {
   const authContext = await showLoginScreen();
-  const gameState = await loadPlayerData();
+  if (authContext.mode === 'online' && !canPlayOnline(authContext.user, authContext.profile)) return;
+
+  const gameState = await loadPlayerData(authContext.mode, authContext.user?.id);
   if (!gameState.activeCreatureId) gameState.activeCreatureId = gameState.collection[0]?.id ?? null;
 
   const sceneBundle = createScene(canvas);
@@ -30,11 +33,13 @@ async function bootstrap() {
   const player = new PlayerController(scene, world);
   const audio = new AudioManager();
   const movementParticles = new MovementParticles(scene);
-  const hud = createHud(hudRoot, gameState, audio, world, { getStorageMode, getSaveStatus });
+  const playerLabel = authContext.profile?.display_name ?? authContext.user?.email ?? '';
+  const hud = createHud(hudRoot, gameState, audio, world, { getStorageMode, getSaveStatus, appMode: authContext.mode, playerLabel });
   const multiplayer = new MultiplayerService(scene, player, gameState, authContext);
   await multiplayer.join();
 
   let overworldPaused = false;
+  let gameStopped = false;
   let encounters;
 
   const battleSystem = new BattleSystem({
@@ -65,6 +70,14 @@ async function bootstrap() {
     hud.update();
     hud.flashMessage(muted ? 'Music muted.' : 'Music playing softly.');
   });
+  hud.onLogout(async () => {
+    gameStopped = true;
+    overworldPaused = true;
+    input.keys?.clear?.();
+    await multiplayer.leave();
+    if (authContext.mode === 'online') await signOut();
+    window.location.reload();
+  });
 
   window.addEventListener('pointerdown', () => audio.start(), { once: true });
   window.addEventListener('keydown', () => audio.start(), { once: true });
@@ -81,6 +94,7 @@ async function bootstrap() {
   }
 
   function animate() {
+    if (gameStopped) return;
     requestAnimationFrame(animate);
     const delta = Math.min(clock.getDelta(), 0.05);
     if (!overworldPaused) {

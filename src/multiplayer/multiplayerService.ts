@@ -21,7 +21,7 @@ export class MultiplayerService {
   }
 
   async join() {
-    if (!isSupabaseConfigured() || !supabase || !this.authContext?.onlineEnabled || !this.authContext?.user) return;
+    if (this.authContext?.mode !== 'online' || !isSupabaseConfigured() || !supabase || !this.authContext?.user || this.authContext?.profile?.approved !== true) return;
     this.status = 'Connecting';
     const profile = this.authContext.profile;
     this.channel = supabase.channel('tiny-tamer-world', { config: { presence: { key: this.authContext.user.id } } });
@@ -93,6 +93,7 @@ export class MultiplayerService {
 
   async leave() {
     if (this.channel && supabase) await supabase.removeChannel(this.channel);
+    this.channel = null;
     this.remotePlayers.forEach((_, id) => this.removeRemotePlayer(id));
     this.status = 'Offline';
   }
